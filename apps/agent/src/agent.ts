@@ -2,9 +2,10 @@ import Anthropic from "@anthropic-ai/sdk";
 import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { createTollFetch } from "@toll/sdk/client";
+import { geminiConfigured, geminiGenerate, type GeminiContent, type GeminiPart } from "@toll/sdk/gemini";
 
 /**
- * A real research agent (Claude + one web tool). It has no card and no PayPal login: when a site
+ * A real research agent (Claude or Gemini, plus one web tool). It has no card and no PayPal login: when a site
  * answers 402, the Toll client asks the gateway to pay, and the owner's rules decide.
  */
 
@@ -73,7 +74,6 @@ When you are done, reply with the final briefing only, then a line "Sources:" li
 
 export async function runAgent(task: string, log: AgentLog) {
   const { gateway, agentKey } = loadKeys();
-  const client = new Anthropic();
   const tollFetch = createTollFetch({ gateway, agentKey, onEvent: (m) => log("payment", m) });
   const receipts: Array<{ url: string; amount: string; status: string; reason: string | null }> = [];
 
@@ -97,6 +97,16 @@ export async function runAgent(task: string, log: AgentLog) {
     }
   }
 
+  const useClaude = Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
+  if (!useClaude && !geminiConfigured()) throw new Error("Set GEMINI_API_KEY (free) or ANTHROPIC_API_KEY to run the agent.");
+  const result = useClaude ? await runClaude(task, log, fetchUrl) : await runGemini(task, log, fetchUrl);
+  return { result, receipts };
+}
+
+type FetchUrl = (url: string, why: string) => Promise<string>;
+
+async function runClaude(task: string, log: AgentLog, fetchUrl: FetchUrl): Promise<string | null> {
+  const client = new Anthropic();
   const messages: Anthropic.Beta.BetaMessageParam[] = [{ role: "user", content: task }];
   for (let turn = 0; turn < MAX_TURNS; turn++) {
     const response = await client.beta.messages.create({
@@ -113,7 +123,7 @@ export async function runAgent(task: string, log: AgentLog) {
 
     if (response.stop_reason === "refusal") {
       log("error", "The model declined this task.");
-      return { result: null, receipts };
+      return null;
     }
     for (const block of response.content) {
       if (block.type === "text" && block.text.trim() && response.stop_reason === "tool_use") log("thought", block.text.trim());
@@ -125,7 +135,7 @@ export async function runAgent(task: string, log: AgentLog) {
         .join("\n")
         .trim();
       log("result", text);
-      return { result: text, receipts };
+      return text;
     }
 
     const results: Anthropic.Beta.BetaToolResultBlockParam[] = [];
@@ -141,5 +151,52 @@ export async function runAgent(task: string, log: AgentLog) {
     messages.push({ role: "user", content: results });
   }
   log("error", `Stopped after ${MAX_TURNS} turns.`);
-  return { result: null, receipts };
+  return null;
+}
+
+async function runGemini(task: string, log: AgentLog, fetchUrl: FetchUrl): Promise<string | null> {
+  const contents: GeminiContent[] = [{ role: "user", parts: [{ text: task }] }];
+  const declarations = [
+    {
+      name: "fetch_url",
+      description: tools[0].description ?? "",
+      parameters: {
+        type: "OBJECT" as const,
+        properties: {
+          url: { type: "STRING" as const, description: "Absolute http(s) URL." },
+          why: { type: "STRING" as const, description: "One sentence: how this resource helps the task. Sent to the payment judge." },
+        },
+        required: ["url", "why"],
+      },
+    },
+  ];
+  for (let turn = 0; turn < MAX_TURNS; turn++) {
+    const res = await geminiGenerate({ system: SYSTEM, contents, tools: [{ functionDeclarations: declarations }] });
+    const content = res.candidates?.[0]?.content;
+    if (!content?.parts?.length) {
+      log("error", `The model returned no answer (${res.candidates?.[0]?.finishReason ?? res.promptFeedback?.blockReason ?? "unknown"}).`);
+      return null;
+    }
+    contents.push({ role: "model", parts: content.parts });
+    const calls = content.parts.filter((p): p is Extract<GeminiPart, { functionCall: unknown }> => "functionCall" in p);
+    const text = content.parts
+      .map((p) => ("text" in p ? p.text : ""))
+      .join("\n")
+      .trim();
+    if (!calls.length) {
+      log("result", text);
+      return text;
+    }
+    if (text) log("thought", text);
+    const responses: GeminiPart[] = [];
+    for (const c of calls) {
+      const { url, why } = c.functionCall.args as { url?: unknown; why?: unknown };
+      const output =
+        typeof url === "string" && typeof why === "string" ? await fetchUrl(url, why) : "Invalid input: url and why are required strings.";
+      responses.push({ functionResponse: { name: c.functionCall.name, response: { result: output } } });
+    }
+    contents.push({ role: "user", parts: responses });
+  }
+  log("error", `Stopped after ${MAX_TURNS} turns.`);
+  return null;
 }

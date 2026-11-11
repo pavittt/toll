@@ -12,7 +12,7 @@ Because an agent that can pay can also be tricked into paying, every payment goe
 
 - **For websites and APIs:** `tollPaywall()` Express middleware answers agents with `402` and a price, verifies payment tokens, and lets the request through. Free pages stay free.
 - **For agent owners:** a wallet topped up with a real PayPal Checkout. Plain-English rules ("$3 a day, never more than $0.25 on one thing, ask me above $0.10, no gift cards") become a strict policy. Payments above your threshold wait for a tap on the dashboard.
-- **For agents:** `createTollFetch()` is a drop-in `fetch` that handles `402` automatically, so any agent framework can use it. The included research agent runs on Claude.
+- **For agents:** `createTollFetch()` is a drop-in `fetch` that handles `402` automatically, so any agent framework can use it. The included research agent runs on Gemini or Claude.
 - **Settlement:** earnings accrue per site on a micro-dollar ledger and are paid out in one PayPal Payouts batch. Unused wallet balance can be withdrawn back to PayPal as a refund of the original top-up.
 - **Live 3D map:** the dashboard shows agents, sites and PayPal as a network, with money flowing in real time and blocked payments flashing red.
 
@@ -20,7 +20,7 @@ Because an agent that can pay can also be tricked into paying, every payment goe
 
 ```mermaid
 sequenceDiagram
-    participant A as AI agent (Claude)
+    participant A as AI agent
     participant S as Website (tollPaywall)
     participant T as Toll gateway
     participant P as PayPal
@@ -44,7 +44,7 @@ PayPal can't move two cents at a time: fees would be larger than the payment. So
 ### The firewall, in layers
 
 1. **Hard rules** (`apps/gateway/src/policy.ts`): per-payment cap, daily cap, allowed and blocked merchant categories, blocked merchants, balance. These are plain code. No text on a web page can change them, so a prompt-injected agent still can't overspend.
-2. **AI judge** (`apps/gateway/src/ai.ts`): for payments that pass the hard rules, Claude decides approve, ask the owner, or block, by comparing the agent's stated purpose with what the site is selling. Anything the site wrote is wrapped as untrusted evidence and never followed as instructions. If the judge is unavailable, the payment is blocked.
+2. **AI judge** (`apps/gateway/src/ai.ts`): for payments that pass the hard rules, the model decides approve, ask the owner, or block, by comparing the agent's stated purpose with what the site is selling. Anything the site wrote is wrapped as untrusted evidence and never followed as instructions. If the judge is unavailable, the payment is blocked.
 3. **Owner approval:** anything above the owner's threshold waits for a tap on the dashboard.
 4. **Token binding:** a payment token is signed, expires in 5 minutes, works once, and only for the exact merchant and URL it was approved for. Approved payments that are never used are returned to the wallet after 10 minutes.
 
@@ -59,21 +59,21 @@ PayPal can't move two cents at a time: fees would be larger than the payment. So
 
 ## AI used
 
-- **Rule compiler:** turns plain-English rules into a typed policy with Claude structured outputs.
+- **Rule compiler:** turns plain-English rules into a typed policy using structured JSON output, validated with zod.
 - **Payment judge:** a per-payment decision with a reason the owner can read and risk signals (for example `prompt_injection`, `off_task`, `price_gouging`).
-- **Research agent:** a Claude tool-use agent with one `fetch_url` tool. It has no card details or PayPal login; it can only ask Toll to pay.
+- **Research agent:** a tool-use agent (Gemini or Claude) with one `fetch_url` tool. It has no card details or PayPal login; it can only ask Toll to pay.
 
-Models default to `claude-opus-5-5` and can be changed with `TOLL_MODEL` and `TOLL_JUDGE_MODEL`. Agent requests opt into Anthropic's server-side fallback so a declined request is retried on a fallback model.
+Toll runs on either provider. With `GEMINI_API_KEY` it uses Gemini's free tier (`GEMINI_MODEL`, default `gemini-flash-latest`). With `ANTHROPIC_API_KEY` it uses Claude (`TOLL_MODEL` / `TOLL_JUDGE_MODEL`, default `claude-opus-5-5`), with Anthropic's server-side fallback enabled on agent requests. Claude is used when both are set.
 
 ## Run it
 
-You need Node.js 20+, a PayPal developer account and an Anthropic API key.
+You need Node.js 20+, a free PayPal developer account, and an AI key: either a **free Google Gemini key** from [aistudio.google.com/apikey](https://aistudio.google.com/apikey) (no card needed) or an Anthropic API key.
 
 1. **PayPal sandbox app.** At [developer.paypal.com](https://developer.paypal.com), go to Apps & Credentials, Sandbox, Create App. Copy the Client ID and Secret. In the app's features, make sure **Payouts** is enabled.
 2. **Sandbox accounts.** Under Testing Tools, Sandbox Accounts, you get a personal (buyer) account. Use it to log in when you top up. Put its email in `PAYOUT_RECEIVER_EMAIL` so you can see payouts arrive.
 3. **Configure.**
    ```bash
-   cp .env.example .env   # fill in PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET, ANTHROPIC_API_KEY, TOLL_SECRET
+   cp .env.example .env   # fill in PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET, GEMINI_API_KEY (or ANTHROPIC_API_KEY), TOLL_SECRET
    npm install
    npm run seed           # creates the agent wallet and four demo websites
    npm run dev            # gateway :4000, demo sites :5001-5004, agent :4100, dashboard :5173
@@ -119,7 +119,7 @@ Toll follows the shape of x402: a `402` body with `x402Version` and an `accepts`
 ```
 packages/sdk        @toll/sdk: Express middleware, agent fetch client, protocol types
 apps/gateway        Toll gateway: ledger (SQLite), firewall, PayPal integration, SSE events
-apps/agent          Claude research agent (CLI and a small server the dashboard drives)
+apps/agent          Research agent (Gemini or Claude) (CLI and a small server the dashboard drives)
 apps/demo-sites     Four sample websites that charge agents, including a malicious one
 apps/dashboard      React + three.js dashboard with the live 3D money map
 ```

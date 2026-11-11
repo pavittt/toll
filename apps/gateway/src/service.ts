@@ -135,7 +135,7 @@ export function createService(db: DB, deps: Deps = {}) {
     async setRules(walletId: string, rulesText: string) {
       const wallet = q.walletById.get(walletId);
       if (!wallet) throw new TollError("Wallet not found", 404);
-      if (!aiEnabled()) throw new TollError("Set ANTHROPIC_API_KEY to compile plain-English rules.", 503);
+      if (!aiEnabled()) throw new TollError("Set GEMINI_API_KEY (free) or ANTHROPIC_API_KEY to compile plain-English rules.", 503);
       const policy = await compile(rulesText);
       db.prepare("UPDATE wallets SET rules_text = ?, policy_json = ? WHERE id = ?").run(rulesText, JSON.stringify(policy), walletId);
       emit({ type: "state", reason: "rules_updated" });
@@ -198,7 +198,7 @@ export function createService(db: DB, deps: Deps = {}) {
             .map((r) => ({ merchant: r.merchant, amount: formatUsd(r.amount_micros), resource: r.resource, status: r.status }));
           decision = await judge(policy, wallet.rules_text, req, recent);
         } else {
-          decision = { decision: "approve", reason: "Within your hard limits (AI judge is off: no ANTHROPIC_API_KEY).", decidedBy: "rules", signals: ["ai_judge_disabled"] };
+          decision = { decision: "approve", reason: "Within your hard limits (AI judge is off: no AI key set).", decidedBy: "rules", signals: ["ai_judge_disabled"] };
         }
       }
       if (decision.decision === "approve" && needsOwnerApproval(policy, amountMicros) && decision.decidedBy !== "cache") {

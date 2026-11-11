@@ -4,6 +4,7 @@ import { config } from "./config.js";
 import { openDb } from "./db.js";
 import { subscribe } from "./events.js";
 import { PayPalError, verifyWebhook } from "./paypal.js";
+import { aiModelLabel, aiProvider } from "./ai.js";
 import { TollError, createService } from "./service.js";
 
 const db = openDb();
@@ -124,6 +125,6 @@ app.listen(config.port, () => {
   const s = service.state();
   console.log(`[toll] gateway on ${config.publicUrl}`);
   console.log(`[toll] PayPal: ${s.paypalEnabled ? "configured" : "NOT configured (set PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET)"}`);
-  console.log(`[toll] AI judge: ${s.aiEnabled ? `on (${config.judgeModel})` : "OFF (set ANTHROPIC_API_KEY)"}`);
+  console.log(`[toll] AI judge: ${s.aiEnabled ? `on (${aiProvider()}: ${aiModelLabel()})` : "OFF (set GEMINI_API_KEY or ANTHROPIC_API_KEY)"}`);
   if (!s.wallets.length) console.log("[toll] No wallets yet. Run `npm run seed` first.");
 });

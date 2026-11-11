@@ -7,7 +7,8 @@
   "exports": {
     "./express": "./src/express.ts",
     "./client": "./src/client.ts",
-    "./protocol": "./src/protocol.ts"
+    "./protocol": "./src/protocol.ts",
+    "./gemini": "./src/gemini.ts"
   },
   "scripts": {
     "typecheck": "tsc -p ."
