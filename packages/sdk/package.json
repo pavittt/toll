@@ -1,0 +1,22 @@
+{
+  "name": "@toll/sdk",
+  "version": "0.1.0",
+  "description": "x402-style pay-per-request for AI agents, settled through PayPal. Express middleware for sellers and a fetch wrapper for agents.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    "./express": "./src/express.ts",
+    "./client": "./src/client.ts",
+    "./protocol": "./src/protocol.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "peerDependencies": {
+    "express": "^4.21.2"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.10.0"
+  }
+}

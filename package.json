@@ -1,0 +1,27 @@
+{
+  "name": "toll",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Open-source, x402-style pay-per-request gateway that lets AI agents pay for APIs and content with PayPal, guarded by plain-English spending rules.",
+  "license": "MIT",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n gateway,sites,agent,dashboard -c cyan,magenta,yellow,green \"npm run start -w @toll/gateway\" \"npm run start -w @toll/demo-sites\" \"npm run serve -w @toll/agent\" \"npm run dev -w @toll/dashboard\"",
+    "seed": "npm run seed -w @toll/gateway",
+    "agent": "npm run start -w @toll/agent --",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test -w @toll/gateway"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
